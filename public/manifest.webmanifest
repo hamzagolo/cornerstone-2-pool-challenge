@@ -1,0 +1,13 @@
+{
+  "name": "Cornerstone 2 Pool Challenge",
+  "short_name": "Pool Challenge",
+  "description": "Find a neighbour and play a pool match at Cornerstone 2.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07130e",
+  "theme_color": "#07130e",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -3,7 +3,16 @@ import { createRoot } from "react-dom/client";
 import { io } from "socket.io-client";
 import "./style.css";
 
-const socket = io(import.meta.env.VITE_SERVER_URL || window.location.origin, { autoConnect: true });
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
+const socket = io(SERVER_URL, { autoConnect: true });
+function getStablePlayerId() {
+  let id = localStorage.getItem("c2-player-id");
+  if (!id) {
+    id = globalThis.crypto?.randomUUID?.() || `c2-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem("c2-player-id", id);
+  }
+  return id;
+}
 const WAIT_MS = 15 * 60 * 1000;
 
 function timeLeft(expiresAt) {
@@ -21,10 +30,20 @@ function App() {
   const [notice, setNotice] = useState("");
   const [incoming, setIncoming] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [pushStatus, setPushStatus] = useState("not-enabled");
+  const [pushBusy, setPushBusy] = useState(false);
+  const playerId = useMemo(() => getStablePlayerId(), []);
   const me = useMemo(() => players.find(p => p.socketId === socket.id), [players]);
   const myChallenge = challenges.find(c => c.fromId === socket.id || c.toId === socket.id);
 
   useEffect(() => {
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      navigator.serviceWorker.getRegistration().then(async registration => {
+        if (!registration) return;
+        const existing = await registration.pushManager.getSubscription();
+        if (existing) setPushStatus("enabled");
+      }).catch(() => {});
+    }
     const tick = setInterval(() => setNow(Date.now()), 1000);
     socket.on("lobby:update", data => {
       setPlayers(data.players || []);
@@ -41,9 +60,47 @@ function App() {
     };
   }, []);
 
+  async function enableNotifications() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setNotice("This browser does not support phone push notifications.");
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Allow notifications in your browser settings to receive match alerts.");
+      const keyResponse = await fetch(`${SERVER_URL}/api/push/public-key`);
+      if (!keyResponse.ok) {
+        const error = await keyResponse.json().catch(() => ({}));
+        throw new Error(error.error || "Phone notifications are not configured on the server yet.");
+      }
+      const { publicKey } = await keyResponse.json();
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const padding = "=".repeat((4 - publicKey.length % 4) % 4);
+        const base64 = (publicKey + padding).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = atob(base64);
+        const applicationServerKey = Uint8Array.from([...raw].map(char => char.charCodeAt(0)));
+        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      }
+      const saveResponse = await fetch(`${SERVER_URL}/api/push/subscribe`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId, subscription: subscription.toJSON() })
+      });
+      const saved = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok || !saved.ok) throw new Error(saved.error || "Could not save notification settings.");
+      setPushStatus("enabled");
+      setNotice("Phone notifications are enabled. We'll alert you when your challenge is accepted.");
+    } catch (error) {
+      setNotice(error.message || "Could not enable phone notifications.");
+    } finally { setPushBusy(false); }
+  }
+
   function join(e) {
     e.preventDefault();
-    socket.emit("player:join", { nickname, accessCode }, result => {
+    socket.emit("player:join", { nickname, accessCode, playerId }, result => {
       if (!result?.ok) return setNotice(result?.error || "Could not join.");
       localStorage.setItem("c2-nickname", nickname.trim());
       setJoined(true); setNotice("You're in the lobby. Your listing lasts up to 15 minutes.");
@@ -77,7 +134,12 @@ function App() {
   return <main className="shell">
     <header className="topbar">
       <a className="brand" href="#"><span className="ball">8</span><span>CORNERSTONE <b>2</b><small>POOL CHALLENGE</small></span></a>
-      <span className="live"><i /> LIVE LOBBY</span>
+      <div className="topbar-actions">
+        <span className="live"><i /> LIVE LOBBY</span>
+        <button className="notify-button" type="button" onClick={enableNotifications} disabled={pushBusy || pushStatus === "enabled"}>
+          {pushBusy ? "SETTING UP…" : pushStatus === "enabled" ? "✓ NOTIFICATIONS ON" : "🔔 ENABLE PHONE ALERTS"}
+        </button>
+      </div>
     </header>
 
     <section className="hero">

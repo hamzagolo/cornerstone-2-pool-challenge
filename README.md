@@ -10,46 +10,47 @@ A real-time, mobile-friendly pool matchmaking website for residents of Cornersto
 - Accept or decline incoming challenges
 - Mark yourself as playing / available again
 - Waiting listings automatically expire after 15 minutes
-- Mobile-friendly dark green pool-hall design
-
-## Requirements
-- Node.js 18 or newer
-- npm
+- Phone push notification to the challenger when their opponent accepts
+- Web app manifest and service worker for installed-phone notifications
 
 ## Run locally
-1. Extract the ZIP.
-2. Open a terminal in the project folder.
-3. Install dependencies:
+1. Extract the ZIP and open a terminal in the project folder.
+2. Install dependencies: `npm install`
+3. Generate VAPID keys once: `npx web-push generate-vapid-keys`
+4. Copy `.env.example` to `.env` and add the generated `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and a `VAPID_SUBJECT` email address you control. Optionally set `ACCESS_CODE`.
+5. Start the app: `npm run dev`
+6. Open the Vite URL shown in the terminal (usually http://localhost:5173).
 
-   ```bash
-   npm install
-   ```
+For real phone push testing, use an HTTPS deployment; localhost is supported by some browsers for development.
 
-4. Optional: copy `.env.example` to `.env` and set `ACCESS_CODE` to a private code for residents. Leave it blank for open-link access.
-5. Start the app:
+## Enable phone notifications
+1. Open the deployed website on the phone.
+2. Tap **ENABLE PHONE ALERTS**.
+3. Allow notifications when prompted.
+4. The player can close the website. When someone accepts their challenge, the phone receives a push notification.
 
-   ```bash
-   npm run dev
-   ```
-
-6. Open the Vite URL shown in the terminal (usually http://localhost:5173). The `src/` folder must be beside `index.html` (it is included in this corrected ZIP).
-
-For testing with another phone, both devices must be on the same Wi-Fi and the second device must use your computer's local network IP with port 5173. For real building-wide use, deploy it to a public HTTPS host.
+On iPhone (iOS 16.4 or later), open the site in Safari, choose **Add to Home Screen**, launch the installed web app from its Home Screen icon, and then enable notifications from inside that installed app. Android users can enable notifications in a supported browser.
 
 ## Deploy to Render (single service)
-This starter is configured to serve the built React app and Socket.IO from one Node service.
+Build command: `npm install && npm run build`
 
-- Build command: `npm install && npm run build`
-- Start command: `npm start`
-- Environment: `NODE_ENV=production`
-- Optional environment variable: `ACCESS_CODE=your-private-building-code`
+Start command: `npm start`
 
-The service must run as one instance because the first version keeps live player presence in server memory. Do not scale it to multiple instances without adding a shared store such as Redis.
+Set these Render environment variables:
+- `NODE_ENV=production`
+- `VAPID_PUBLIC_KEY` = generated public key
+- `VAPID_PRIVATE_KEY` = generated private key
+- `VAPID_SUBJECT` = `mailto:your-real-email@example.com`
+- `PUSH_SUBSCRIPTIONS_FILE` = `/var/data/push-subscriptions.json`
+- `ACCESS_CODE` = optional private building code
+
+**Persistent storage is required:** attach a persistent disk mounted at `/var/data`. Push subscriptions are saved there so they survive restarts and deploys. Without a persistent disk (or database-backed subscription store), subscriptions on Render's temporary filesystem can be lost. Keep one server instance for this MVP.
+
+Do not share the VAPID private key publicly or commit it to GitHub. Put it only in local `.env` and Render environment variables.
 
 ## Important MVP notes
-- Player presence is temporary and is removed when their browser disconnects.
-- Waiting players expire after 15 minutes. The server enforces this, not just the browser countdown.
-- This version does not send push notifications when a browser is closed; users see live challenges while the website is open.
+- Player presence and pending challenges remain in server memory. Run one server instance.
+- Waiting players expire after 15 minutes. The server enforces this.
+- Push delivery depends on browser permission and a valid subscription.
+- This version sends the push notification to the person who sent the challenge when the opponent accepts it.
 - Use nicknames only. Do not ask residents to post apartment numbers or personal contact details.
-- Before sharing publicly, set an access code and distribute it only to residents.
-# cornerstone-2-pool-challenge
